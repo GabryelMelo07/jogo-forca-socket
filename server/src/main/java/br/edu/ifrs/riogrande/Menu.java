@@ -1,27 +1,30 @@
 package br.edu.ifrs.riogrande;
 
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Random;
-import java.util.Scanner;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import br.edu.ifrs.riogrande.database.DatabaseConnection;
+import br.edu.ifrs.riogrande.entity.Jogador;
+import br.edu.ifrs.riogrande.entity.Palavra;
 import br.edu.ifrs.riogrande.repository.PalavraRepository;
 
 public class Menu {
 
-    public static void iniciarJogo(Scanner scanner) throws SQLException {
+    public static void iniciarJogo(Jogador jogador1, Jogador jogador2) throws SQLException, IOException {
         Connection conexao = DatabaseConnection.getConnection();
         PalavraRepository palavraRepository = new PalavraRepository(conexao, "palavras");
 
         Random random = new Random();
 
-        String palavraSecreta = palavraRepository.findPalavraById(random.nextInt(1, 100)).toUpperCase();
+        Palavra palavra = palavraRepository.findPalavraById(random.nextInt(1, 51));
+        String palavraSecreta = palavra.getConteudo().toUpperCase();
         System.out.println(palavraSecreta);
 
         char[] palavraAdivinhada = new char[palavraSecreta.length()];
@@ -36,35 +39,36 @@ public class Menu {
         boolean palavraCompletada = false;
         Set<Character> letrasTentadas = new HashSet<>();
 
+        Jogador jogadorAtual = random.nextInt(2) == 0 ? jogador1 : jogador2;
+        Jogador proximoJogador = jogadorAtual == jogador1 ? jogador2 : jogador1;
+
         while (tentativasRestantes >= 0 && !palavraCompletada) {
+            jogador1.enviarMensagem("DICA: " + palavra.getDica().toUpperCase(), jogador2);
+            
             String exibirPalavra = IntStream.range(0, palavraAdivinhada.length)
                     .mapToObj(i -> String.valueOf(palavraAdivinhada[i]))
                     .collect(Collectors.joining(" "));
 
             if (tentativasRestantes == 0) {
-                System.out.println(exibirForca(tentativasRestantes));
-                System.out.println(exibirPalavra);
-                System.out.println("Fim de jogo, você perdeu.");
+                jogadorAtual.enviarMensagens(exibirForca(tentativasRestantes), exibirPalavra, "Fim de jogo, você perdeu.");
+                proximoJogador.enviarMensagens(exibirForca(tentativasRestantes), exibirPalavra, "Fim de jogo, você perdeu.");
                 return;
             }
 
-            System.out.println(exibirForca(tentativasRestantes));
-            System.out.println(exibirPalavra);
+            jogadorAtual.enviarMensagens(exibirForca(tentativasRestantes), exibirPalavra, "Tentativas restantes: " + tentativasRestantes, "Digite uma letra: ");
+            proximoJogador.enviarMensagens(exibirForca(tentativasRestantes), exibirPalavra, "Tentativas restantes: " + tentativasRestantes);
 
-            System.out.println("\nTentativas restantes: " + tentativasRestantes);
-            System.out.print("Digite uma letra: ");
-
-            String input = scanner.nextLine().toUpperCase();
+            String input = jogadorAtual.lerMensagem().toUpperCase();
 
             if (input.length() == 0 || input.length() > 1) {
-                System.out.println("Entrada inválida. Tente novamente.");
+                jogadorAtual.enviarMensagem("Entrada inválida. Tente novamente.");
                 continue;
             }
             
             char letra = input.charAt(0);
 
             if (letrasTentadas.contains(letra)) {
-                System.out.println("Você já tentou a letra " + letra + ". Tente outra.");
+                jogadorAtual.enviarMensagem("Você já tentou a letra " + letra + ". Tente outra.");
                 continue;
             }
 
@@ -85,12 +89,19 @@ public class Menu {
             palavraCompletada = String.valueOf(palavraAdivinhada).equals(palavraSecreta);
 
             if (palavraCompletada) {
-                System.out.println("Parabéns! Você adivinhou a palavra: " + palavraSecreta);
+                jogadorAtual.enviarMensagem("Parabéns! Você adivinhou a palavra: " + palavraSecreta);
+                proximoJogador.enviarMensagem(String.format("Jogador %s, adivinhou a palavra: %s.\nVocê perdeu, boa sorte na próxima!", jogadorAtual.getNome(), palavraSecreta));
             } else if (tentativasRestantes == 0) {
-                System.out.println("Você perdeu! A palavra era: " + palavraSecreta);
+                jogadorAtual.enviarMensagem("Você perdeu! A palavra era: " + palavraSecreta);
+                proximoJogador.enviarMensagem("Jogo encerrado, não houve vencedores.\nA palavra era: "+ palavraSecreta);
             }
+
+            Jogador jogadorTemporario = jogadorAtual;
+            jogadorAtual = proximoJogador;
+            proximoJogador = jogadorTemporario;
         }
 
+        conexao.close();
         return;
     }
 
